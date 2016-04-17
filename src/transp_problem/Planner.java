@@ -17,6 +17,9 @@ public class Planner {
 
 		for (int k = 0, i = 0, j = 0; k < numOfSteps; k++) {
 
+			if (i == numOfProducers || j == numOfConsumers)
+				break;
+
 			int production = producers.get(i).getProduction();
 			int consumption = consumers.get(j).getConsumption();
 
