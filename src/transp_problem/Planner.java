@@ -1,17 +1,16 @@
 package transp_problem;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import Jama.Matrix;
 
 public class Planner {
 
-	public static IntMatrix createBasicPlan(List<Mine> producers, List<ConsumptionPoint> consumers) {
+	public static Matrix createBasicPlan(List<Mine> producers, List<ConsumptionPoint> consumers) {
 		int numOfProducers = producers.size();
 		int numOfConsumers = consumers.size();
 
-		IntMatrix planMatrix = new IntMatrix(numOfProducers, numOfConsumers, -1);
+		Matrix planMatrix = new Matrix(numOfProducers, numOfConsumers, -1);
 
 		int numOfSteps = numOfProducers + numOfConsumers - 1;
 
@@ -53,7 +52,7 @@ public class Planner {
 		}
 	}
 
-	public static MatrixSet getCoeffMatrix(Matrix X, Matrix C) {
+	private static MatrixSet getCoeffMatrices(Matrix X, Matrix C) {
 		int numOfRows = X.getRowDimension();
 		int numOfColumns = X.getColumnDimension();
 		int numOfConditions = numOfRows + numOfColumns;
@@ -77,46 +76,96 @@ public class Planner {
 					B.set(k, 0, cost);
 					k++;
 				}
-		
-		A.print(A.getColumnDimension(), 2);
-		B.print(B.getColumnDimension(), 2);
 
 		return new MatrixSet(A, B);
 	}
 
-	public static Matrix getPotentialVector(MatrixSet set) throws Exception {
-		return solveWithKramer(set.A, set.B);
+	public static class PotentialVectorItem {
+
+		private Matrix P;
+		private int numOfProducers;
+		private int numOfConsumers;
+
+		public PotentialVectorItem(Matrix P, int numOfProducers, int numOfConsumers) {
+			this.P = P;
+			this.numOfProducers = numOfProducers;
+			this.numOfConsumers = numOfConsumers;
+		}
 	}
 
-	/*------Kramer's method-------*/
+	public static PotentialVectorItem getPotentialVector(Matrix X, Matrix C) {
 
-	private static Matrix solveWithKramer(Matrix A, Matrix B) throws Exception {
+		int numOfProducers = X.getRowDimension();
+		int numOfConsumers = X.getColumnDimension();
 
-		if (A.getRowDimension() != B.getRowDimension())
-			throw new Exception("Numbers of rows of A and B are not equal!");
+		MatrixSet set = getCoeffMatrices(X, C);
+		Matrix P = set.A.solve(set.B);
 
-		int numOfEquations = A.getRowDimension();
+		return new PotentialVectorItem(P, numOfProducers, numOfConsumers);
+	}
 
-		Matrix X = new Matrix(numOfEquations, 1);
-		ArrayList<Matrix> matrixList = new ArrayList<Matrix>();
+	public static Matrix calculateCostMatrix(PotentialVectorItem item, Matrix C) {
 
-		for (int i = 0; i < numOfEquations; i++) {
-			Matrix D = A.copy();
-			for (int j = 0; j < numOfEquations; j++) {
-				D.set(j, i, B.get(j, 0));
+		Matrix C1 = C.copy();
+
+		int numOfRows = C1.getRowDimension();
+		int numOfColumns = C1.getColumnDimension();
+		int vectorColumnNum = item.P.getColumnDimension() - 1;
+
+		for (int i = 0; i < numOfRows; i++)
+			for (int j = 0; j < numOfColumns; j++) {
+				double costValue = C1.get(i, j);
+				double v_j = item.P.get(item.numOfProducers + j, vectorColumnNum);
+				double u_i = item.P.get(i, vectorColumnNum);
+				double newCostValue = costValue - (v_j - u_i);
+				C1.set(i, j, newCostValue);
 			}
-			matrixList.add(D);
-		}
 
-		for (int i = 0; i < numOfEquations; i++) {
-			double solution = matrixList.get(i).det() / A.det();
-			X.set(i, 0, solution);
-			System.out.println(matrixList.get(i).det());
-			int[] rows = {1,2,3,4,5,6};
-			int[] cols = {1,2,3,4,5,6};
-			System.err.println("DET: " + A.getMatrix(rows,cols).det());
+		return C1;
+	}
+	
+	private static class MatrixElement {
+		double value;
+		int row;
+		int column;
+		
+		private MatrixElement(double value, int row, int column) {
+			this.value = value;
+			this.row = row;
+			this.column = column;
 		}
-
-		return X;
+	}
+	
+	public static MatrixElement findMinElement(Matrix M) {
+		int numOfRows = M.getRowDimension();
+		int numOfColumns = M.getColumnDimension();
+		
+		double minElement = Double.POSITIVE_INFINITY;
+		int min_i = 0;
+		int min_j = 0;
+		
+		MatrixElement element = new MatrixElement(minElement, min_i, min_j);
+		
+		for (int i = 0; i < numOfRows; i++)
+			for (int j = 0; j < numOfColumns; j++)
+				if (M.get(i, j) < minElement) {
+					minElement = M.get(i, j);
+					min_i = i;
+					min_j = j;
+				}
+		
+		return element;
+	}
+	
+	public static boolean checkOnOptimum(Matrix C) {
+		int numOfRows = C.getRowDimension();
+		int numOfColumns = C.getColumnDimension();
+		
+		for (int i = 0; i < numOfRows; i++)
+			for (int j = 0; j < numOfColumns; j++)
+				if (C.get(i, j) < 0)
+					return false;
+		
+		return true;
 	}
 }
