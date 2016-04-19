@@ -1,5 +1,6 @@
 package transp_problem;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import Jama.Matrix;
@@ -123,29 +124,29 @@ public class Planner {
 
 		return C1;
 	}
-	
+
 	private static class MatrixElement {
 		double value;
 		int row;
 		int column;
-		
+
 		private MatrixElement(double value, int row, int column) {
 			this.value = value;
 			this.row = row;
 			this.column = column;
 		}
 	}
-	
+
 	public static MatrixElement findMinElement(Matrix M) {
 		int numOfRows = M.getRowDimension();
 		int numOfColumns = M.getColumnDimension();
-		
+
 		double minElement = Double.POSITIVE_INFINITY;
 		int min_i = 0;
 		int min_j = 0;
-		
+
 		MatrixElement element = new MatrixElement(minElement, min_i, min_j);
-		
+
 		for (int i = 0; i < numOfRows; i++)
 			for (int j = 0; j < numOfColumns; j++)
 				if (M.get(i, j) < minElement) {
@@ -153,19 +154,79 @@ public class Planner {
 					min_i = i;
 					min_j = j;
 				}
-		
+
 		return element;
 	}
-	
+
 	public static boolean checkOnOptimum(Matrix C) {
 		int numOfRows = C.getRowDimension();
 		int numOfColumns = C.getColumnDimension();
-		
+
 		for (int i = 0; i < numOfRows; i++)
 			for (int j = 0; j < numOfColumns; j++)
 				if (C.get(i, j) < 0)
 					return false;
-		
+
 		return true;
+	}
+
+	enum StringState {
+		SCRATCH_OUT, LEAVE
+	}
+
+	private static StringState checkMatrixString(double[] string) {
+		int count = 0;
+
+		for (int i = 0; i < string.length; i++) {
+			if (string[i] != 0)
+				count++;
+			if (count >= 2)
+				return StringState.LEAVE;
+		}
+
+		return StringState.SCRATCH_OUT;
+	}
+
+	public static enum StringType {
+		ROW, COLUMN
+	}
+
+	public static Matrix scratchOutString(Matrix M, int num, StringType type) {
+		int numOfRows = M.getRowDimension();
+		int numOfColumns = M.getColumnDimension();
+		List<Integer> numList = new ArrayList<Integer>();
+		Matrix subM = null;
+
+		switch (type) {
+		case ROW:
+			for (int i = 0; i < numOfRows; i++)
+				numList.add(i);
+			numList.remove(num);
+			int[] rowNums = new int[numList.size()];
+			for (int i = 0; i < numList.size(); i++)
+				rowNums[i] = numList.get(i);
+			subM = M.getMatrix(rowNums, 0, numOfColumns - 1);
+			break;
+		case COLUMN:
+			for (int i = 0; i < numOfColumns; i++)
+				numList.add(i);
+			numList.remove(num);
+			int[] columnNums = new int[numList.size()];
+			for (int i = 0; i < numList.size(); i++)
+				columnNums[i] = numList.get(i);
+			subM = M.getMatrix(0, numOfRows - 1, columnNums);
+			break;
+		}
+		
+		return subM;
+	}
+
+	private static double[] getStringFromPack(double[] strings, int stringLength, int stringNum) {
+		double[] string = new double[stringLength];
+		for (int i = 0; i < stringLength; i++) {
+			string[i] = strings[stringNum * stringLength + i];
+		}
+
+		return string;
 	}
 }
