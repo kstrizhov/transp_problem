@@ -2,17 +2,17 @@ package transp_problem;
 
 public class Mine extends Plant {
 	
-	private int production;
+	private double production;
 	
-	public Mine(int production) {
+	public Mine(double production) {
 		this.setProduction(production);
 	}
 
-	public int getProduction() {
+	public double getProduction() {
 		return production;
 	}
 
-	public void setProduction(int production) {
+	public void setProduction(double production) {
 		this.production = production;
 	}
 

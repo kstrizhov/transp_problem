@@ -2,17 +2,17 @@ package transp_problem;
 
 public class ConsumptionPoint {
 	
-	private int consumption;
+	private double consumption;
 	
-	public ConsumptionPoint(int consumption) {
+	public ConsumptionPoint(double consumption) {
 		this.setConsumption(consumption);
 	}
 
-	public int getConsumption() {
+	public double getConsumption() {
 		return consumption;
 	}
 
-	public void setConsumption(int consumption) {
+	public void setConsumption(double consumption) {
 		this.consumption = consumption;
 	}
 
