@@ -9,7 +9,7 @@ import Jama.Matrix;
 
 public class Planner {
 
-	public static double calculateCostFunction(Matrix X, Matrix C) {
+	private static double calculateCostFunction(Matrix X, Matrix C) {
 		int numOfRows = X.getRowDimension();
 		int numOfColumns = X.getColumnDimension();
 
@@ -107,7 +107,7 @@ public class Planner {
 		}
 	}
 
-	public static boolean isSingular(Matrix X) {
+	private static boolean isSingular(Matrix X) {
 		int numOfRows = X.getRowDimension();
 		int numOfColumns = X.getColumnDimension();
 
@@ -123,7 +123,7 @@ public class Planner {
 		return false;
 	}
 
-	public static class MatrixSet {
+	private static class MatrixSet {
 		private Matrix A;
 		private Matrix B;
 
@@ -161,20 +161,20 @@ public class Planner {
 		return new MatrixSet(A, B);
 	}
 
-	public static class PotentialVectorItem {
+	private static class PotentialVectorItem {
 
 		private Matrix P;
 		private int numOfProducers;
 		private int numOfConsumers;
 
-		public PotentialVectorItem(Matrix P, int numOfProducers, int numOfConsumers) {
+		private PotentialVectorItem(Matrix P, int numOfProducers, int numOfConsumers) {
 			this.P = P;
 			this.numOfProducers = numOfProducers;
 			this.numOfConsumers = numOfConsumers;
 		}
 	}
 
-	public static PotentialVectorItem getPotentialVector(Matrix X, Matrix C) {
+	private static PotentialVectorItem getPotentialVector(Matrix X, Matrix C) {
 
 		int numOfProducers = X.getRowDimension();
 		int numOfConsumers = X.getColumnDimension();
@@ -185,7 +185,7 @@ public class Planner {
 		return new PotentialVectorItem(P, numOfProducers, numOfConsumers);
 	}
 
-	public static Matrix calculateCostMatrix(PotentialVectorItem item, Matrix C) {
+	private static Matrix calculateCostMatrix(PotentialVectorItem item, Matrix C) {
 
 		Matrix C1 = C.copy();
 
@@ -205,37 +205,37 @@ public class Planner {
 		return C1;
 	}
 
-	enum ElementSign {
+	private enum ElementSign {
 		PLUS, MINUS
 	}
 
-	public static class MatrixElement {
+	private static class MatrixElement {
 		double value;
 		int row;
 		int column;
 		ElementSign sign;
 
-		public MatrixElement(double value, int row, int column) {
+		private MatrixElement(double value, int row, int column) {
 			this.value = value;
 			this.row = row;
 			this.column = column;
 		}
 
-		public MatrixElement(double value, int row, int column, ElementSign sign) {
+		private MatrixElement(double value, int row, int column, ElementSign sign) {
 			this.value = value;
 			this.row = row;
 			this.column = column;
 			this.sign = sign;
 		}
 
-		public void print(boolean printSign) {
+		private void print(boolean printSign) {
 			System.err.print("value: " + value + "  row: " + row + "  column: " + column);
 			if (printSign)
 				System.err.println("  sign: " + sign);
 		}
 	}
 
-	public static MatrixElement findMinElement(Matrix M) {
+	private static MatrixElement findMinElement(Matrix M) {
 		int numOfRows = M.getRowDimension();
 		int numOfColumns = M.getColumnDimension();
 
@@ -254,7 +254,7 @@ public class Planner {
 		return new MatrixElement(minElement, min_i, min_j);
 	}
 
-	public static HashMap<Integer, MatrixElement> findCycle(Matrix M, MatrixElement element) {
+	private static HashMap<Integer, MatrixElement> findCycle(Matrix M, MatrixElement element) {
 
 		int numOfRows = M.getRowDimension();
 		int numOfColumns = M.getColumnDimension();
@@ -309,9 +309,9 @@ public class Planner {
 
 		M.set(originalElementRow, originalElementColumn, originalElementValue);
 
-		for (Integer key : cycleMap.keySet())
-			if (cycleMap.get(key).value < 0)
-				cycleMap.get(key).value = Double.POSITIVE_INFINITY;
+		for (MatrixElement e : cycleMap.values())
+			if (e.value < 0)
+				e.value = Double.POSITIVE_INFINITY;
 
 		setCycleSigns(cycleMap);
 
@@ -326,17 +326,17 @@ public class Planner {
 				cycle.get(i).sign = ElementSign.MINUS;
 	}
 
-	public static double getMinimalSupply(Map<Integer, MatrixElement> cycle) {
+	private static double getMinimalSupply(Map<Integer, MatrixElement> cycle) {
 
 		MatrixElement minSupplyElement = cycle.get(0);
 
-		for (Integer i : cycle.keySet()) {
-			switch (cycle.get(i).sign) {
+		for (MatrixElement e : cycle.values()) {
+			switch (e.sign) {
 			case PLUS:
 				break;
 			case MINUS:
-				if (cycle.get(i).value < minSupplyElement.value)
-					minSupplyElement = cycle.get(i);
+				if (e.value < minSupplyElement.value)
+					minSupplyElement = e;
 				break;
 			}
 		}
@@ -344,7 +344,7 @@ public class Planner {
 		return minSupplyElement.value;
 	}
 
-	public static boolean checkOnOptimum(Matrix C) {
+	private static boolean checkOnOptimum(Matrix C) {
 		int numOfRows = C.getRowDimension();
 		int numOfColumns = C.getColumnDimension();
 
@@ -356,16 +356,16 @@ public class Planner {
 		return true;
 	}
 
-	public static void reallocateSupplies(Matrix X, Map<Integer, MatrixElement> cycle) {
+	private static void reallocateSupplies(Matrix X, Map<Integer, MatrixElement> cycle) {
 
 		double minSupplyValue = getMinimalSupply(cycle);
 
-		for (Integer key : cycle.keySet()) {
-			int i = cycle.get(key).row;
-			int j = cycle.get(key).column;
+		for (MatrixElement e : cycle.values()) {
+			int i = e.row;
+			int j = e.column;
 			double value = X.get(i, j);
 
-			switch (cycle.get(key).sign) {
+			switch (e.sign) {
 			case PLUS:
 				X.set(i, j, value + minSupplyValue);
 				break;
@@ -443,7 +443,7 @@ public class Planner {
 			return new StringMapSet(rowsMap, columnsMap);
 	}
 
-	enum StringState {
+	private enum StringState {
 		SCRATCH_OUT, LEAVE
 	}
 
@@ -462,11 +462,11 @@ public class Planner {
 		return StringState.SCRATCH_OUT;
 	}
 
-	public static enum StringType {
+	private static enum StringType {
 		ROW, COLUMN
 	}
 
-	public static Matrix scratchOutStrings(Matrix M, int num, StringType type) {
+	private static Matrix scratchOutStrings(Matrix M, int num, StringType type) {
 		int numOfRows = M.getRowDimension();
 		int numOfColumns = M.getColumnDimension();
 		List<Integer> numList = new ArrayList<Integer>();
