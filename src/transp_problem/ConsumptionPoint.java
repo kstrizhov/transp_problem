@@ -1,9 +1,9 @@
 package transp_problem;
 
 public class ConsumptionPoint {
-	
+
 	private double consumption;
-	
+
 	public ConsumptionPoint(double consumption) {
 		this.setConsumption(consumption);
 	}
@@ -16,4 +16,7 @@ public class ConsumptionPoint {
 		this.consumption = consumption;
 	}
 
+	public ConsumptionPoint copy() {
+		return new ConsumptionPoint(consumption);
+	}
 }

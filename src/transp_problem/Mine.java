@@ -1,9 +1,9 @@
 package transp_problem;
 
 public class Mine extends Plant {
-	
+
 	private double production;
-	
+
 	public Mine(double production) {
 		this.setProduction(production);
 	}
@@ -16,4 +16,7 @@ public class Mine extends Plant {
 		this.production = production;
 	}
 
+	public Mine copy() {
+		return new Mine(production);
+	}
 }
