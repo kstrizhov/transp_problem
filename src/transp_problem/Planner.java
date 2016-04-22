@@ -22,11 +22,23 @@ public class Planner {
 		return cost;
 	}
 
-	public static Matrix createBasicPlan(List<Mine> producers, List<ConsumptionPoint> consumers) {
+	private final static double INITIAL_PLAN_MATRIX_VALUE = 0;
+
+	public static Matrix createBasicPlan(List<Mine> p, List<ConsumptionPoint> c) {
+
+		List<Mine> producers = new ArrayList<Mine>();
+		for (int i = 0; i < p.size(); i++) {
+			producers.add(p.get(i).copy());
+		}
+		List<ConsumptionPoint> consumers = new ArrayList<ConsumptionPoint>();
+		for (int i = 0; i < c.size(); i++) {
+			consumers.add(c.get(i).copy());
+		}
+
 		int numOfProducers = producers.size();
 		int numOfConsumers = consumers.size();
 
-		Matrix planMatrix = new Matrix(numOfProducers, numOfConsumers, -1);
+		Matrix planMatrix = new Matrix(numOfProducers, numOfConsumers, INITIAL_PLAN_MATRIX_VALUE);
 
 		int numOfSteps = numOfProducers + numOfConsumers - 1;
 
@@ -42,15 +54,11 @@ public class Planner {
 				planMatrix.set(i, j, production);
 				consumers.get(j).setConsumption(consumption - production);
 				producers.get(i).setProduction(0);
-				for (int t = j + 1; t < numOfConsumers; t++)
-					planMatrix.set(i, t, 0);
 				i++;
 			} else {
 				planMatrix.set(i, j, consumption);
 				producers.get(i).setProduction(production - consumption);
 				consumers.get(j).setConsumption(0);
-				for (int t = i + 1; t < numOfProducers; t++)
-					planMatrix.set(t, j, 0);
 				j++;
 			}
 		}
@@ -132,6 +140,13 @@ public class Planner {
 			this.B = B;
 		}
 	}
+	
+	private final static int U1_ROW = 0;
+	private final static int U1_COLUMN = 0;
+	private final static double U1_COEFFICIENT = 1;
+	private final static double U1_VALUE = 0;
+	
+	private final static int NUM_OF_COLUMNS_IN_VECTOR = 1;
 
 	private static MatrixSet getCoeffMatrices(Matrix X, Matrix C) {
 		int numOfRows = X.getRowDimension();
@@ -139,10 +154,10 @@ public class Planner {
 		int numOfConditions = numOfRows + numOfColumns;
 
 		Matrix A = new Matrix(numOfConditions, numOfConditions);
-		Matrix B = new Matrix(numOfConditions, 1);
+		Matrix B = new Matrix(numOfConditions, NUM_OF_COLUMNS_IN_VECTOR);
 
-		A.set(0, 0, 1); // set +1 before u1
-		B.set(0, 0, 0); // set u1 = 0;
+		A.set(U1_ROW, U1_COLUMN, U1_COEFFICIENT);
+		B.set(U1_ROW, U1_COLUMN, U1_VALUE);
 
 		int k = 1;
 
