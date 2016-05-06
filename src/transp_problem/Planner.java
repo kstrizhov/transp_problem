@@ -24,7 +24,17 @@ public class Planner {
 
 	private final static double INITIAL_PLAN_MATRIX_VALUE = 0;
 
-	public static Matrix createBasicPlan(List<Mine> p, List<ConsumptionPoint> c) {
+	protected static class Plan {
+		protected Matrix X0;
+		protected ArrayList<MatrixElement> basis;
+
+		protected Plan(Matrix plan, ArrayList<MatrixElement> basis) {
+			this.X0 = plan;
+			this.basis = basis;
+		}
+	}
+
+	public static Plan createBasicPlan(List<Mine> p, List<ConsumptionPoint> c) {
 
 		List<Mine> producers = new ArrayList<Mine>();
 		for (int i = 0; i < p.size(); i++) {
@@ -38,7 +48,8 @@ public class Planner {
 		int numOfProducers = producers.size();
 		int numOfConsumers = consumers.size();
 
-		Matrix planMatrix = new Matrix(numOfProducers, numOfConsumers, INITIAL_PLAN_MATRIX_VALUE);
+		Matrix X0 = new Matrix(numOfProducers, numOfConsumers, INITIAL_PLAN_MATRIX_VALUE);
+		ArrayList<MatrixElement> basis = new ArrayList<MatrixElement>();
 
 		int numOfSteps = numOfProducers + numOfConsumers - 1;
 
@@ -50,85 +61,65 @@ public class Planner {
 			double production = producers.get(i).getProduction();
 			double consumption = consumers.get(j).getConsumption();
 
+			MatrixElement element;
+
 			if (production < consumption) {
-				planMatrix.set(i, j, production);
+				X0.set(i, j, production);
+				element = new MatrixElement(i, j, production);
 				consumers.get(j).setConsumption(consumption - production);
 				producers.get(i).setProduction(0);
 				i++;
 			} else {
-				planMatrix.set(i, j, consumption);
+				X0.set(i, j, consumption);
+				element = new MatrixElement(i, j, consumption);
 				producers.get(i).setProduction(production - consumption);
 				consumers.get(j).setConsumption(0);
 				j++;
 			}
+
+			basis.add(element);
 		}
 
-		return planMatrix;
+		return new Plan(X0, basis);
 	};
 
-	public static void solve(Matrix X0, Matrix C0) {
+	public static void solve(Plan plan, Matrix C0) {
 
-		Planner.PotentialVectorItem p = Planner.getPotentialVector(X0, C0);
+		Matrix X0 = plan.X0;
 
-		Matrix C1 = Planner.calculateCostMatrix(p, C0);
+		printResult(X0, C0);
 
-		if (Planner.checkOnOptimum(C1)) {
-			System.out.println("Optimum plan");
-			System.out.println("Cost function: " + Planner.calculateCostFunction(X0, C0));
-			X0.print(X0.getColumnDimension(), 2);
+		PotentialVectorItem p = getPotentialVector(plan.basis, C0);
+
+		Matrix C1 = calculateCostMatrix(p, C0);
+
+		if (checkOnOptimum(C1)) {
+			printResult(X0, C0);
 			return;
 		}
 
-		C1.print(C1.getColumnDimension(), 2);
+		MatrixElement minC1element = findMinElement(C1);
 
-		MatrixElement minC1element = Planner.findMinElement(C1);
+		HashMap<Integer, MatrixElement> cycle = findCycle(plan, minC1element);
 
-		HashMap<Integer, MatrixElement> cycle = Planner.findCycle(X0, minC1element);
+		reallocateSupplies(plan, cycle);
 
-		for (Integer i : cycle.keySet()) {
-			System.err.print("cycle element N" + i + ": ");
-			cycle.get(i).print(true);
-			System.err.println("");
-		}
+		if (checkBasisForSingularity(plan.basis)) {
+			System.err.println("SINGULAR!");
+			removeSupplyFromSingularBasis(plan.basis);
+		} else
+			removeSupplyFromBasis(plan.basis);
 
-		System.out.println("BEFORE");
+		PotentialVectorItem newP = getPotentialVector(plan.basis, C0);
 
-		X0.print(X0.getColumnDimension(), 2);
+		Matrix newC1 = calculateCostMatrix(newP, C0);
 
-		Planner.reallocateSupplies(X0, cycle);
-
-		System.out.println("AFTER");
-
-		X0.print(X0.getColumnDimension(), 2);
-
-		Planner.PotentialVectorItem newP = Planner.getPotentialVector(X0, C0);
-
-		Matrix newC1 = Planner.calculateCostMatrix(newP, C0);
-
-		if (Planner.checkOnOptimum(newC1)) {
-			System.out.println("Optimum plan");
-			System.out.println("Cost function: " + Planner.calculateCostFunction(X0, C0));
-			X0.print(X0.getColumnDimension(), 2);
+		if (checkOnOptimum(newC1)) {
+			printResult(X0, C0);
 		} else {
-			System.out.println("qqq");
-			solve(X0, C0);
+			System.out.println("next step");
+			solve(plan, C0);
 		}
-	}
-
-	private static boolean isSingular(Matrix X) {
-		int numOfRows = X.getRowDimension();
-		int numOfColumns = X.getColumnDimension();
-
-		int numOfConditions = numOfRows + numOfColumns;
-		int count = 0;
-
-		for (int i = 0; i < numOfRows; i++)
-			for (int j = 0; j < numOfColumns; j++)
-				if (X.get(i, j) != 0)
-					count++;
-		if (count != numOfConditions - 1)
-			return true;
-		return false;
 	}
 
 	private static class MatrixSet {
@@ -140,17 +131,21 @@ public class Planner {
 			this.B = B;
 		}
 	}
-	
+
 	private final static int U1_ROW = 0;
 	private final static int U1_COLUMN = 0;
 	private final static double U1_COEFFICIENT = 1;
 	private final static double U1_VALUE = 0;
-	
-	private final static int NUM_OF_COLUMNS_IN_VECTOR = 1;
 
-	private static MatrixSet getCoeffMatrices(Matrix X, Matrix C) {
-		int numOfRows = X.getRowDimension();
-		int numOfColumns = X.getColumnDimension();
+	private final static int NUM_OF_COLUMNS_IN_VECTOR = 1;
+	private final static int VECTOR_COLUMN_NUMBER = 0;
+
+	private final static double Ui_COEFFICIENT = -1;
+	private final static double Vj_COEFFICIENT = 1;
+
+	private static MatrixSet getCoeffMatrices(ArrayList<MatrixElement> basis, Matrix C) {
+		int numOfRows = C.getRowDimension();
+		int numOfColumns = C.getColumnDimension();
 		int numOfConditions = numOfRows + numOfColumns;
 
 		Matrix A = new Matrix(numOfConditions, numOfConditions);
@@ -159,19 +154,17 @@ public class Planner {
 		A.set(U1_ROW, U1_COLUMN, U1_COEFFICIENT);
 		B.set(U1_ROW, U1_COLUMN, U1_VALUE);
 
-		int k = 1;
+		int equationNumber = U1_ROW + 1;
 
-		for (int i = 0; i < X.getRowDimension(); i++)
-			for (int j = 0; j < X.getColumnDimension(); j++)
-				if (X.get(i, j) != 0) {
-					double uCoeff = -1;
-					double vCoeff = 1;
-					A.set(k, i, uCoeff);
-					A.set(k, j + numOfRows, vCoeff);
-					double cost = C.get(i, j);
-					B.set(k, 0, cost);
-					k++;
-				}
+		for (MatrixElement e : basis) {
+			int i = e.row;
+			int j = e.column;
+			A.set(equationNumber, i, Ui_COEFFICIENT);
+			A.set(equationNumber, j + numOfRows, Vj_COEFFICIENT);
+			double cost = C.get(i, j);
+			B.set(equationNumber, VECTOR_COLUMN_NUMBER, cost);
+			equationNumber++;
+		}
 
 		return new MatrixSet(A, B);
 	}
@@ -189,12 +182,12 @@ public class Planner {
 		}
 	}
 
-	private static PotentialVectorItem getPotentialVector(Matrix X, Matrix C) {
+	private static PotentialVectorItem getPotentialVector(ArrayList<MatrixElement> basis, Matrix C) {
 
-		int numOfProducers = X.getRowDimension();
-		int numOfConsumers = X.getColumnDimension();
+		int numOfProducers = C.getRowDimension();
+		int numOfConsumers = C.getColumnDimension();
 
-		MatrixSet set = getCoeffMatrices(X, C);
+		MatrixSet set = getCoeffMatrices(basis, C);
 		Matrix P = set.A.solve(set.B);
 
 		return new PotentialVectorItem(P, numOfProducers, numOfConsumers);
@@ -206,7 +199,7 @@ public class Planner {
 
 		int numOfRows = C1.getRowDimension();
 		int numOfColumns = C1.getColumnDimension();
-		int vectorColumnNum = item.P.getColumnDimension() - 1;
+		int vectorColumnNum = VECTOR_COLUMN_NUMBER;
 
 		for (int i = 0; i < numOfRows; i++)
 			for (int j = 0; j < numOfColumns; j++) {
@@ -224,68 +217,72 @@ public class Planner {
 		PLUS, MINUS
 	}
 
-	private static class MatrixElement {
+	protected static class MatrixElement {
 		double value;
 		int row;
 		int column;
 		ElementSign sign;
 
-		private MatrixElement(double value, int row, int column) {
-			this.value = value;
+		private MatrixElement(int row, int column, double value) {
 			this.row = row;
 			this.column = column;
+			this.value = value;
 		}
 
-		private MatrixElement(double value, int row, int column, ElementSign sign) {
-			this.value = value;
+		private MatrixElement(int row, int column, double value, ElementSign sign) {
 			this.row = row;
 			this.column = column;
+			this.value = value;
 			this.sign = sign;
 		}
 
-		private void print(boolean printSign) {
-			System.err.print("value: " + value + "  row: " + row + "  column: " + column);
+		private boolean equals(MatrixElement e) {
+			if (this.row == e.row && this.column == e.column && this.value == e.value)
+				return true;
+			return false;
+		}
+
+		private boolean equals(MatrixElement e, boolean checkSign) {
+			if (checkSign) {
+				if (this.row == e.row && this.column == e.column && this.value == e.value && this.sign == e.sign)
+					return true;
+			} else if (this.row == e.row && this.column == e.column && this.value == e.value)
+				return true;
+			return false;
+		}
+
+		public void print(boolean printSign) {
+			System.out.print("value: " + value + "  row: " + row + "  column: " + column);
 			if (printSign)
-				System.err.println("  sign: " + sign);
+				System.out.println("  sign: " + sign);
+			System.out.println("");
 		}
 	}
 
-	private static MatrixElement findMinElement(Matrix M) {
-		int numOfRows = M.getRowDimension();
-		int numOfColumns = M.getColumnDimension();
-
-		double minElement = Double.POSITIVE_INFINITY;
-		int min_i = 0;
-		int min_j = 0;
-
-		for (int i = 0; i < numOfRows; i++)
-			for (int j = 0; j < numOfColumns; j++)
-				if (M.get(i, j) < minElement) {
-					minElement = M.get(i, j);
-					min_i = i;
-					min_j = j;
-				}
-
-		return new MatrixElement(minElement, min_i, min_j);
+	private static enum StringType {
+		ROW, COLUMN
 	}
 
-	private static HashMap<Integer, MatrixElement> findCycle(Matrix M, MatrixElement element) {
+	private static HashMap<Integer, MatrixElement> findCycle(Plan plan, MatrixElement element) {
+		Matrix X0 = plan.X0;
+		ArrayList<MatrixElement> basis = plan.basis;
 
-		int numOfRows = M.getRowDimension();
-		int numOfColumns = M.getColumnDimension();
+		int numOfRows = X0.getRowDimension();
+		int numOfColumns = X0.getColumnDimension();
 
-		int originalElementRow = element.row;
-		int originalElementColumn = element.column;
-		double originalElementValue = M.get(originalElementRow, originalElementColumn);
+		MatrixElement newBasiselement = new MatrixElement(element.row, element.column,
+				X0.get(element.row, element.column));
+		basis.add(newBasiselement);
 
-		M.set(element.row, element.column, element.value);
+		StringMapSet set = scratchOutRule(plan);
 
-		StringMapSet set = scratchOutRule(M);
+		int initialElementNumber = 0;
 
 		HashMap<Integer, MatrixElement> cycleMap = new HashMap<Integer, MatrixElement>();
-		cycleMap.put(0, element);
+		cycleMap.put(initialElementNumber, newBasiselement);
 
-		int cycleElementCount = 0;
+		int cycleElementCount = initialElementNumber;
+		boolean cycleIsLocked = false;
 		StringType type = StringType.ROW;
 
 		do {
@@ -294,41 +291,41 @@ public class Planner {
 
 			switch (type) {
 			case ROW:
-				for (int j = 0; j < numOfColumns; j++) {
+				rowLoop: for (int j = 0; j < numOfColumns; j++) {
 					if (!set.columnsMap.containsKey(j))
 						continue;
-					if (M.get(element_i, j) != 0 && j != element_j) {
-						MatrixElement nextElement = new MatrixElement(M.get(element_i, j), element_i, j);
-						cycleMap.put(++cycleElementCount, nextElement);
-						element_j = j;
-						type = StringType.COLUMN;
-						break;
-					}
+					MatrixElement nextElement = new MatrixElement(element_i, j, X0.get(element_i, j));
+					for (MatrixElement e : basis)
+						if (e.equals(nextElement) && j != element_j) {
+							cycleMap.put(++cycleElementCount, nextElement);
+							element_j = j;
+							type = StringType.COLUMN;
+							break rowLoop;
+						}
 				}
 				break;
 			case COLUMN:
-				for (int i = 0; i < numOfRows; i++) {
+				columnLoop: for (int i = 0; i < numOfRows; i++) {
 					if (!set.rowsMap.containsKey(i))
 						continue;
-					if (M.get(i, element_j) != 0 && i != element_i) {
-						MatrixElement nextElement = new MatrixElement(M.get(i, element_j), i, element_j);
-						cycleMap.put(++cycleElementCount, nextElement);
-						element_i = i;
-						type = StringType.ROW;
-						break;
-					}
+					MatrixElement nextElement = new MatrixElement(i, element_j, X0.get(i, element_j));
+					for (MatrixElement e : basis)
+						if (e.equals(nextElement) && i != element_i) {
+							cycleMap.put(++cycleElementCount, nextElement);
+							element_i = i;
+							type = StringType.ROW;
+							break columnLoop;
+						}
 				}
 				break;
 			}
-		} while (cycleElementCount != 2 * set.rowsMap.size() - 1);
 
-		M.set(originalElementRow, originalElementColumn, originalElementValue);
-
-		for (MatrixElement e : cycleMap.values())
-			if (e.value < 0)
-				e.value = Double.POSITIVE_INFINITY;
-
-		setCycleSigns(cycleMap);
+			if (element_i == cycleMap.get(initialElementNumber).row
+					&& element_j == cycleMap.get(initialElementNumber).column) {
+				cycleMap.remove(cycleElementCount);
+				cycleIsLocked = true;
+			}
+		} while (cycleIsLocked != true);
 
 		return cycleMap;
 	}
@@ -343,7 +340,17 @@ public class Planner {
 
 	private static double getMinimalSupply(Map<Integer, MatrixElement> cycle) {
 
-		MatrixElement minSupplyElement = cycle.get(0);
+		MatrixElement minSupplyElement = null;
+
+		label: for (MatrixElement e : cycle.values()) {
+			switch (e.sign) {
+			case PLUS:
+				break;
+			case MINUS:
+				minSupplyElement = e;
+				break label;
+			}
+		}
 
 		for (MatrixElement e : cycle.values()) {
 			switch (e.sign) {
@@ -371,7 +378,11 @@ public class Planner {
 		return true;
 	}
 
-	private static void reallocateSupplies(Matrix X, Map<Integer, MatrixElement> cycle) {
+	private static void reallocateSupplies(Plan plan, Map<Integer, MatrixElement> cycle) {
+		Matrix X = plan.X0;
+		ArrayList<MatrixElement> basis = plan.basis;
+
+		setCycleSigns(cycle);
 
 		double minSupplyValue = getMinimalSupply(cycle);
 
@@ -383,9 +394,15 @@ public class Planner {
 			switch (e.sign) {
 			case PLUS:
 				X.set(i, j, value + minSupplyValue);
+				for (MatrixElement e1 : basis)
+					if (e.equals(e1, false))
+						e1.value = value + minSupplyValue;
 				break;
 			case MINUS:
 				X.set(i, j, value - minSupplyValue);
+				for (MatrixElement e1 : basis)
+					if (e.equals(e1, false))
+						e1.value = value - minSupplyValue;
 				break;
 			}
 		}
@@ -401,13 +418,9 @@ public class Planner {
 		}
 	}
 
-	private static StringMapSet scratchOutRule(Matrix M) {
-
-		int numOfRows = M.getRowDimension();
-		int numOfColumns = M.getColumnDimension();
-
-		double[] rows = M.getRowPackedCopy();
-		double[] cols = M.getColumnPackedCopy();
+	private static StringMapSet scratchOutRule(Plan plan) {
+		int numOfRows = plan.X0.getRowDimension();
+		int numOfColumns = plan.X0.getColumnDimension();
 
 		Map<Integer, Integer> rowsMap = new HashMap<Integer, Integer>();
 		for (int i = 0; i < numOfRows; i++) {
@@ -425,28 +438,26 @@ public class Planner {
 			stringWasScratchedOut = false;
 			for (int i = 0; i < numOfRows; i++) {
 				if (rowsMap.containsKey(i)) {
-					double[] row = getStringFromPack(rows, numOfColumns, i);
-					switch (checkMatrixString(row, columnsMap)) {
+					switch (checkRow(plan, columnsMap, i)) {
 					case LEAVE:
-						continue;
+						break;
 					case SCRATCH_OUT:
 						rowsMap.remove(i);
 						stringWasScratchedOut = true;
-						continue;
+						break;
 					}
 				}
 			}
 
-			for (int i = 0; i < numOfColumns; i++) {
-				if (columnsMap.containsKey(i)) {
-					double[] column = getStringFromPack(cols, numOfRows, i);
-					switch (checkMatrixString(column, rowsMap)) {
+			for (int j = 0; j < numOfColumns; j++) {
+				if (columnsMap.containsKey(j)) {
+					switch (checkColumn(plan, rowsMap, j)) {
 					case LEAVE:
-						continue;
+						break;
 					case SCRATCH_OUT:
-						columnsMap.remove(i);
+						columnsMap.remove(j);
 						stringWasScratchedOut = true;
-						continue;
+						break;
 					}
 				}
 			}
@@ -458,18 +469,32 @@ public class Planner {
 			return new StringMapSet(rowsMap, columnsMap);
 	}
 
+	/* ----- HELP METODS ----- */
+
+	private static void printResult(Matrix X0, Matrix C0) {
+		System.out.println("Optimum plan");
+		System.out.println("Cost function: " + calculateCostFunction(X0, C0));
+		X0.print(X0.getColumnDimension(), 2);
+	}
+
 	private enum StringState {
 		SCRATCH_OUT, LEAVE
 	}
 
-	private static StringState checkMatrixString(double[] string, Map<Integer, Integer> stringElementsMap) {
+	private static StringState checkRow(Plan plan, Map<Integer, Integer> columnsMap, int rowNumber) {
+		Matrix X0 = plan.X0;
+		ArrayList<MatrixElement> basis = plan.basis;
+
 		int count = 0;
 
-		for (int i = 0; i < string.length; i++) {
-			if (!stringElementsMap.containsKey(i))
-				continue;
-			if (string[i] != 0)
-				count++;
+		for (int j = 0; j < X0.getColumnDimension(); j++) {
+			int e_i = rowNumber;
+			int e_j = j;
+			double e_value = X0.get(e_i, e_j);
+			MatrixElement e = new MatrixElement(e_i, e_j, e_value);
+			for (MatrixElement element : basis)
+				if (element.equals(e) && columnsMap.containsKey(e.column))
+					count++;
 			if (count >= 2)
 				return StringState.LEAVE;
 		}
@@ -477,46 +502,112 @@ public class Planner {
 		return StringState.SCRATCH_OUT;
 	}
 
-	private static enum StringType {
-		ROW, COLUMN
+	private static StringState checkColumn(Plan plan, Map<Integer, Integer> rowsMap, int columnNumber) {
+		Matrix X0 = plan.X0;
+		ArrayList<MatrixElement> basis = plan.basis;
+
+		int count = 0;
+
+		for (int i = 0; i < X0.getRowDimension(); i++) {
+			int e_i = i;
+			int e_j = columnNumber;
+			double e_value = X0.get(e_i, e_j);
+			MatrixElement e = new MatrixElement(e_i, e_j, e_value);
+			for (MatrixElement element : basis)
+				if (element.equals(e) && rowsMap.containsKey(e.row))
+					count++;
+			if (count >= 2)
+				return StringState.LEAVE;
+		}
+
+		return StringState.SCRATCH_OUT;
 	}
 
-	private static Matrix scratchOutStrings(Matrix M, int num, StringType type) {
+	private static void checkBasicPlan(Plan plan, ArrayList<Mine> producers, ArrayList<ConsumptionPoint> consumers) {
+		int numOfRows = plan.X0.getRowDimension();
+		int numOfColumns = plan.X0.getColumnDimension();
+
+		double rowSum = 0;
+		double columnSum = 0;
+
+		for (int i = 0; i < numOfRows; i++) {
+			for (int j = 0; j < numOfColumns; j++) {
+				rowSum += plan.X0.get(i, j);
+			}
+			if (rowSum != producers.get(i).getProduction()) {
+				System.out.println(
+						"Basic plan is not correct: row " + i + " sum is not equal to producers[" + i + "] production");
+				return;
+			}
+		}
+
+		for (int j = 0; j < numOfColumns; j++) {
+			for (int i = 0; i < numOfRows; i++) {
+				columnSum += plan.X0.get(i, j);
+			}
+			if (columnSum != consumers.get(j).getConsumption()) {
+				System.out.println("Basic plan is not correct: column " + j + " sum is not equal to consumers[" + j
+						+ "] consumption");
+				return;
+			}
+		}
+
+		System.out.println("Basic plan is correct");
+	}
+
+	private static boolean checkBasisForSingularity(ArrayList<MatrixElement> basis) {
+		int count = 0;
+		for (MatrixElement e : basis) {
+			if (e.value == 0)
+				count++;
+			if (count > 1)
+				return true;
+		}
+		return false;
+	}
+
+	private static void removeSupplyFromSingularBasis(ArrayList<MatrixElement> basis) {
+		ArrayList<MatrixElement> nullElementsList = new ArrayList<MatrixElement>();
+		for (MatrixElement e : basis)
+			if (e.value == 0)
+				nullElementsList.add(e);
+
+		MatrixElement min_row_element = nullElementsList.get(0);
+
+		for (MatrixElement e : nullElementsList)
+			if (e.row < min_row_element.row)
+				min_row_element = e;
+
+		basis.remove(min_row_element);
+	}
+
+	private static void removeSupplyFromBasis(ArrayList<MatrixElement> basis) {
+		MatrixElement nullElement = null;
+		for (MatrixElement e : basis)
+			if (e.value == 0) {
+				nullElement = e;
+				break;
+			}
+
+		basis.remove(nullElement);
+	}
+
+	private static MatrixElement findMinElement(Matrix M) {
 		int numOfRows = M.getRowDimension();
 		int numOfColumns = M.getColumnDimension();
-		List<Integer> numList = new ArrayList<Integer>();
-		Matrix subM = null;
 
-		switch (type) {
-		case ROW:
-			for (int i = 0; i < numOfRows; i++)
-				numList.add(i);
-			numList.remove(num);
-			int[] rowNums = new int[numList.size()];
-			for (int i = 0; i < numList.size(); i++)
-				rowNums[i] = numList.get(i);
-			subM = M.getMatrix(rowNums, 0, numOfColumns - 1);
-			break;
-		case COLUMN:
-			for (int i = 0; i < numOfColumns; i++)
-				numList.add(i);
-			numList.remove(num);
-			int[] columnNums = new int[numList.size()];
-			for (int i = 0; i < numList.size(); i++)
-				columnNums[i] = numList.get(i);
-			subM = M.getMatrix(0, numOfRows - 1, columnNums);
-			break;
-		}
+		int min_i = 0;
+		int min_j = 0;
+		double minElement = M.get(min_i, min_j);
 
-		return subM;
-	}
+		for (int i = 0; i < numOfRows; i++)
+			for (int j = 0; j < numOfColumns; j++)
+				if (M.get(i, j) < minElement) {
+					minElement = M.get(i, j);
+					min_i = i;
+					min_j = j;
+				}
 
-	private static double[] getStringFromPack(double[] strings, int stringLength, int stringNum) {
-		double[] string = new double[stringLength];
-		for (int i = 0; i < stringLength; i++) {
-			string[i] = strings[stringNum * stringLength + i];
-		}
-
-		return string;
+		return new MatrixElement(min_i, min_j, minElement);
 	}
 }
